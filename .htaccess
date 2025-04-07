@@ -1,0 +1,26 @@
+RewriteEngine On
+RewriteBase /media_library/
+
+# Điều hướng tất cả các request đến index.php trừ các file thực tế
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+# Cấm truy cập vào thư mục database trực tiếp
+<FilesMatch "^(database|config)\.php$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# Bảo vệ .htaccess
+<Files .htaccess>
+    Order Allow,Deny
+    Deny from all
+</Files>
+
+# Cấm truy cập trực tiếp vào thư mục includes
+<IfModule mod_rewrite.c>
+    RewriteRule ^includes/ - [F,L]
+</IfModule>
+
+AddType application/javascript .js .mjs
