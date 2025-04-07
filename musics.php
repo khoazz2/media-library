@@ -4,400 +4,418 @@ require_once '../database/database.php';
 
 $db = new Database();
 
-// Xử lý thêm nhạc mới
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add') {
-    $title = sanitize($_POST['title']);
-    $artist = sanitize($_POST['artist']);
-    $description = sanitize($_POST['description']);
-    $category_id = !empty($_POST['category_id']) ? (int)$_POST['category_id'] : null;
+// Xem chi tiết một bài hát
+if (isset($_GET['id']) && is_numeric($_GET['id'])) {
+    $musicId = (int)$_GET['id'];
+    $music = $db->selectOne("SELECT m.*, c.name as category_name 
+                            FROM musics m 
+                            LEFT JOIN categories c ON m.category_id = c.id 
+                            WHERE m.id = ?", [$musicId]);
     
-    // Upload cover image
-    $cover_image = '';
-    if (isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === 0) {
-        $fileName = time() . '_' . basename($_FILES['cover_image']['name']);
-        $targetPath = COVER_UPLOAD_PATH . $fileName;
-        
-        if (move_uploaded_file($_FILES['cover_image']['tmp_name'], $targetPath)) {
-            $cover_image = $fileName;
-        }
+    include '../includes/header.php';
+    
+    if (!$music) {
+        echo '<div class="container mt-5"><div class="alert alert-danger">Bài hát không tồn tại!</div></div>';
+        include '../includes/footer.php';
+        exit;
     }
     
-    // Upload audio file
-    $audio_file = '';
-    if (isset($_FILES['audio_file']) && $_FILES['audio_file']['error'] === 0) {
-        $fileName = time() . '_' . basename($_FILES['audio_file']['name']);
-        $targetPath = MUSIC_UPLOAD_PATH . $fileName;
+    // Hiển thị chi tiết bài hát
+    ?>
+    <div class="container mt-5">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="<?= BASE_URL ?>">Trang chủ</a></li>
+                <li class="breadcrumb-item"><a href="<?= USER_URL ?>musics.php">Âm nhạc</a></li>
+                <li class="breadcrumb-item active"><?= htmlspecialchars($music['title']) ?></li>
+            </ol>
+        </nav>
         
-        if (move_uploaded_file($_FILES['audio_file']['tmp_name'], $targetPath)) {
-            $audio_file = $fileName;
-        }
-    }
-    
-    // Thêm vào database
-    $data = [
-        'title' => $title,
-        'artist' => $artist,
-        'description' => $description,
-        'category_id' => $category_id,
-        'cover_image' => $cover_image,
-        'audio_file' => $audio_file
-    ];
-    
-    $db->insert('musics', $data);
-    redirect(ADMIN_URL . 'musics.php?success=1');
-}
-
-// Xử lý cập nhật nhạc
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update') {
-    $id = (int)$_POST['id'];
-    $title = sanitize($_POST['title']);
-    $artist = sanitize($_POST['artist']);
-    $description = sanitize($_POST['description']);
-    $category_id = !empty($_POST['category_id']) ? (int)$_POST['category_id'] : null;
-    
-    // Lấy thông tin hiện tại
-    $currentMusic = $db->selectOne("SELECT * FROM musics WHERE id = ?", [$id]);
-    
-    // Upload cover image nếu có
-    $cover_image = $currentMusic['cover_image'];
-    if (isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === 0) {
-        $fileName = time() . '_' . basename($_FILES['cover_image']['name']);
-        $targetPath = COVER_UPLOAD_PATH . $fileName;
-        
-        if (move_uploaded_file($_FILES['cover_image']['tmp_name'], $targetPath)) {
-            // Xóa file cũ nếu có
-            if (!empty($currentMusic['cover_image'])) {
-                $oldFile = COVER_UPLOAD_PATH . $currentMusic['cover_image'];
-                if (file_exists($oldFile)) {
-                    unlink($oldFile);
-                }
-            }
-            $cover_image = $fileName;
-        }
-    }
-    
-    // Upload audio file nếu có
-    $audio_file = $currentMusic['audio_file'];
-    if (isset($_FILES['audio_file']) && $_FILES['audio_file']['error'] === 0) {
-        $fileName = time() . '_' . basename($_FILES['audio_file']['name']);
-        $targetPath = MUSIC_UPLOAD_PATH . $fileName;
-        
-        if (move_uploaded_file($_FILES['audio_file']['tmp_name'], $targetPath)) {
-            // Xóa file cũ nếu có
-            if (!empty($currentMusic['audio_file'])) {
-                $oldFile = MUSIC_UPLOAD_PATH . $currentMusic['audio_file'];
-                if (file_exists($oldFile)) {
-                    unlink($oldFile);
-                }
-            }
-            $audio_file = $fileName;
-        }
-    }
-    
-    // Cập nhật vào database
-    $data = [
-        'title' => $title,
-        'artist' => $artist,
-        'description' => $description,
-        'category_id' => $category_id,
-        'cover_image' => $cover_image,
-        'audio_file' => $audio_file
-    ];
-    
-    $db->update('musics', $data, 'id = ?', [$id]);
-    redirect(ADMIN_URL . 'musics.php?updated=1');
-}
-
-// Xử lý xóa nhạc
-if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
-    $id = (int)$_GET['id'];
-    
-    // Lấy thông tin trước khi xóa
-    $music = $db->selectOne("SELECT * FROM musics WHERE id = ?", [$id]);
-    
-    if ($music) {
-        // Xóa các file liên quan
-        if (!empty($music['cover_image'])) {
-            $file = COVER_UPLOAD_PATH . $music['cover_image'];
-            if (file_exists($file)) {
-                unlink($file);
-            }
-        }
-        
-        if (!empty($music['audio_file'])) {
-            $file = MUSIC_UPLOAD_PATH . $music['audio_file'];
-            if (file_exists($file)) {
-                unlink($file);
-            }
-        }
-        
-        // Xóa từ database
-        $db->delete('musics', 'id = ?', [$id]);
-    }
-    
-    redirect(ADMIN_URL . 'musics.php?deleted=1');
-}
-
-// Lấy danh sách danh mục
-$categories = $db->select("SELECT * FROM categories WHERE type = 'music' ORDER BY name ASC");
-
-// Lấy danh sách nhạc hoặc chi tiết một bài hát
-$editMusic = null;
-if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
-    $editMusic = $db->selectOne("SELECT * FROM musics WHERE id = ?", [(int)$_GET['edit']]);
-}
-
-$musics = $db->select("SELECT m.*, c.name as category_name 
-                      FROM musics m
-                      LEFT JOIN categories c ON m.category_id = c.id 
-                      ORDER BY m.created_at DESC");
-
-include '../includes/admin_header.php';
-?>
-
-<div class="container mt-4">
-    <div class="row">
-        <div class="col-md-12">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h2><?= $editMusic ? 'Chỉnh sửa bài hát' : 'Quản lý âm nhạc' ?></h2>
-                <?php if (!$editMusic): ?>
-                <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#addMusicModal">
-                    <i class="fas fa-plus"></i> Thêm bài hát mới
-                </button>
+        <div class="row">
+            <div class="col-md-4">
+                <?php if (!empty($music['cover_image'])): ?>
+                <img src="<?= BASE_URL ?>assets/uploads/covers/<?= $music['cover_image'] ?>" 
+                     alt="<?= htmlspecialchars($music['title']) ?>" class="img-fluid rounded shadow mb-4">
+                <?php else: ?>
+                <div class="bg-info text-white p-5 text-center rounded mb-4">
+                    <i class="fas fa-music fa-5x mb-3"></i>
+                    <h5>Không có ảnh bìa</h5>
+                </div>
+                <?php endif; ?>
+                
+                <div class="card bg-info text-white mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title">Phát nhạc</h5>
+                        <div class="media-player">
+                            <?php if (!empty($music['audio_file'])): ?>
+                            <audio id="audioPlayer" controls class="w-100 mb-3">
+                                <source src="<?= BASE_URL ?>assets/uploads/musics/<?= $music['audio_file'] ?>" type="audio/mpeg">
+                                Trình duyệt của bạn không hỗ trợ phát audio.
+                            </audio>
+                            
+                            <div class="d-flex justify-content-between">
+                                <button onclick="document.getElementById('audioPlayer').play()" class="btn btn-sm btn-light">
+                                    <i class="fas fa-play"></i>
+                                </button>
+                                <button onclick="document.getElementById('audioPlayer').pause()" class="btn btn-sm btn-light">
+                                    <i class="fas fa-pause"></i>
+                                </button>
+                                <button onclick="document.getElementById('audioPlayer').volume += 0.1" class="btn btn-sm btn-light">
+                                    <i class="fas fa-volume-up"></i>
+                                </button>
+                                <button onclick="document.getElementById('audioPlayer').volume -= 0.1" class="btn btn-sm btn-light">
+                                    <i class="fas fa-volume-down"></i>
+                                </button>
+                                <button onclick="document.getElementById('audioPlayer').currentTime = 0" class="btn btn-sm btn-light">
+                                    <i class="fas fa-redo"></i>
+                                </button>
+                            </div>
+                            <?php else: ?>
+                            <div class="alert alert-light">
+                                Không có file audio cho bài hát này.
+                            </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                
+                <?php if (!empty($music['category_name'])): ?>
+                <div class="card mb-4">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">Thể loại</h5>
+                    </div>
+                    <div class="card-body">
+                        <a href="<?= USER_URL ?>musics.php?category=<?= $music['category_id'] ?>" class="btn btn-outline-info">
+                            <?= htmlspecialchars($music['category_name']) ?>
+                        </a>
+                    </div>
+                </div>
                 <?php endif; ?>
             </div>
             
-            <?php if (isset($_GET['success'])): ?>
-            <div class="alert alert-success alert-dismissible fade show" role="alert">
-                Thêm bài hát mới thành công!
-                <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
-            </div>
-            <?php endif; ?>
-            
-            <?php if (isset($_GET['updated'])): ?>
-            <div class="alert alert-success alert-dismissible fade show" role="alert">
-                Cập nhật bài hát thành công!
-                <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
-            </div>
-            <?php endif; ?>
-            
-            <?php if (isset($_GET['deleted'])): ?>
-            <div class="alert alert-success alert-dismissible fade show" role="alert">
-                Xóa bài hát thành công!
-                <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
-            </div>
-            <?php endif; ?>
-            
-            <?php if ($editMusic): ?>
-            <!-- Form chỉnh sửa bài hát -->
-            <div class="card mb-4">
-                <div class="card-body">
-                    <form method="post" enctype="multipart/form-data">
-                        <input type="hidden" name="action" value="update">
-                        <input type="hidden" name="id" value="<?= $editMusic['id'] ?>">
+            <div class="col-md-8">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h1 class="mb-3"><?= htmlspecialchars($music['title']) ?></h1>
+                        <h5 class="text-muted mb-4">Nghệ sĩ: <?= htmlspecialchars($music['artist']) ?></h5>
                         
-                        <div class="form-group">
-                            <label>Tiêu đề bài hát</label>
-                            <input type="text" class="form-control" name="title" value="<?= htmlspecialchars($editMusic['title']) ?>" required>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label>Nghệ sĩ</label>
-                            <input type="text" class="form-control" name="artist" value="<?= htmlspecialchars($editMusic['artist']) ?>" required>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label>Danh mục</label>
-                            <select class="form-control" name="category_id">
-                                <option value="">-- Không có danh mục --</option>
-                                <?php 
-                                if (empty($categories)): 
-                                ?>
-                                <option value="" disabled>Chưa có danh mục. Vui lòng thêm danh mục trước.</option>
-                                <?php else: ?>
-                                    <?php foreach ($categories as $category): ?>
-                                    <option value="<?= $category['id'] ?>" <?= $editMusic['category_id'] == $category['id'] ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($category['name']) ?>
-                                    </option>
-                                    <?php endforeach; ?>
-                                <?php endif; ?>
-                            </select>
-                            <?php if (empty($categories)): ?>
-                            <small class="form-text text-danger">
-                                Chưa có danh mục nào. <a href="<?= ADMIN_URL ?>categories.php">Thêm danh mục</a> trước khi thêm nội dung.
-                            </small>
+                        <div class="mb-4">
+                            <span class="badge badge-info mr-2">Âm nhạc</span>
+                            <?php if (!empty($music['category_name'])): ?>
+                            <span class="badge badge-secondary"><?= htmlspecialchars($music['category_name']) ?></span>
                             <?php endif; ?>
                         </div>
                         
-                        <div class="form-group">
-                            <label>Mô tả</label>
-                            <textarea class="form-control" name="description" rows="4"><?= htmlspecialchars($editMusic['description']) ?></textarea>
+                        <div class="mb-4">
+                            <h5>Mô tả</h5>
+                            <?php if (!empty($music['description'])): ?>
+                            <p class="text-justify"><?= nl2br(htmlspecialchars($music['description'])) ?></p>
+                            <?php else: ?>
+                            <p class="text-muted">Không có mô tả.</p>
+                            <?php endif; ?>
                         </div>
                         
-                        <div class="form-group">
-                            <label>Ảnh bìa</label>
-                            <?php if (!empty($editMusic['cover_image'])): ?>
-                            <div class="mb-2">
-                                <img src="<?= BASE_URL ?>assets/uploads/covers/<?= $editMusic['cover_image'] ?>" style="max-width: 200px; max-height: 200px;">
+                        <div>
+                            <h5>Thông tin khác</h5>
+                            <ul class="list-unstyled">
+                                <li><strong>Ngày thêm:</strong> <?= date('d/m/Y', strtotime($music['created_at'])) ?></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Bài hát cùng nghệ sĩ -->
+                <?php
+                $artistMusics = $db->select(
+                    "SELECT * FROM musics 
+                     WHERE artist = ? AND id != ? 
+                     ORDER BY created_at DESC LIMIT 4",
+                    [$music['artist'], $music['id']]
+                );
+                
+                if (!empty($artistMusics)):
+                ?>
+                <div class="mt-5">
+                    <h4 class="mb-4">Bài hát khác của <?= htmlspecialchars($music['artist']) ?></h4>
+                    <div class="row">
+                        <?php foreach ($artistMusics as $artistMusic): ?>
+                        <div class="col-md-3 mb-4">
+                            <div class="card h-100 shadow-sm">
+                                <div class="card-img-top" style="height: 120px; overflow: hidden;">
+                                    <?php if (!empty($artistMusic['cover_image'])): ?>
+                                    <img src="<?= BASE_URL ?>assets/uploads/covers/<?= $artistMusic['cover_image'] ?>" 
+                                         alt="<?= htmlspecialchars($artistMusic['title']) ?>" class="img-fluid w-100 h-100" style="object-fit: cover;">
+                                    <?php else: ?>
+                                    <div class="bg-info text-white h-100 d-flex align-items-center justify-content-center">
+                                        <i class="fas fa-music fa-3x"></i>
+                                    </div>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="card-body">
+                                    <h6 class="card-title text-truncate"><?= htmlspecialchars($artistMusic['title']) ?></h6>
+                                </div>
+                                <div class="card-footer bg-white">
+                                    <a href="<?= USER_URL ?>musics.php?id=<?= $artistMusic['id'] ?>" class="btn btn-info btn-sm btn-block">
+                                        <i class="fas fa-headphones"></i> Nghe
+                                    </a>
+                                </div>
                             </div>
-                            <?php endif; ?>
-                            <input type="file" class="form-control-file" name="cover_image" accept="image/*">
-                            <small class="form-text text-muted">Để trống nếu không muốn thay đổi ảnh bìa.</small>
                         </div>
-                        
-                        <div class="form-group">
-                            <label>File audio</label>
-                            <?php if (!empty($editMusic['audio_file'])): ?>
-                            <div class="mb-2">
-                                <audio controls>
-                                    <source src="<?= BASE_URL ?>assets/uploads/musics/<?= $editMusic['audio_file'] ?>" type="audio/mpeg">
-                                    Trình duyệt của bạn không hỗ trợ phát audio.
-                                </audio>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+                
+                <!-- Bài hát cùng thể loại -->
+                <?php
+                if (!empty($music['category_id'])) {
+                    $categoryMusics = $db->select(
+                        "SELECT * FROM musics 
+                         WHERE category_id = ? AND id != ? 
+                         ORDER BY created_at DESC LIMIT 3",
+                        [$music['category_id'], $music['id']]
+                    );
+                    
+                    if (!empty($categoryMusics) && empty($artistMusics)):
+                    ?>
+                    <div class="mt-5">
+                        <h4 class="mb-4">Bài hát cùng thể loại</h4>
+                        <div class="row">
+                            <?php foreach ($categoryMusics as $categoryMusic): ?>
+                            <div class="col-md-4 mb-4">
+                                <div class="card h-100 shadow-sm">
+                                    <div class="card-img-top" style="height: 150px; overflow: hidden;">
+                                        <?php if (!empty($categoryMusic['cover_image'])): ?>
+                                        <img src="<?= BASE_URL ?>assets/uploads/covers/<?= $categoryMusic['cover_image'] ?>" 
+                                             alt="<?= htmlspecialchars($categoryMusic['title']) ?>" class="img-fluid w-100 h-100" style="object-fit: cover;">
+                                        <?php else: ?>
+                                        <div class="bg-info text-white h-100 d-flex align-items-center justify-content-center">
+                                            <i class="fas fa-music fa-3x"></i>
+                                        </div>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="card-body">
+                                        <h5 class="card-title"><?= htmlspecialchars($categoryMusic['title']) ?></h5>
+                                        <p class="card-text small text-muted">Nghệ sĩ: <?= htmlspecialchars($categoryMusic['artist']) ?></p>
+                                    </div>
+                                    <div class="card-footer bg-white">
+                                        <a href="<?= USER_URL ?>musics.php?id=<?= $categoryMusic['id'] ?>" class="btn btn-info btn-sm btn-block">
+                                            <i class="fas fa-headphones"></i> Nghe
+                                        </a>
+                                    </div>
+                                </div>
                             </div>
-                            <?php endif; ?>
-                            <input type="file" class="form-control-file" name="audio_file" accept="audio/*">
-                            <small class="form-text text-muted">Để trống nếu không muốn thay đổi file audio.</small>
+                            <?php endforeach; ?>
                         </div>
-                        
-                        <div class="form-group">
-                            <button type="submit" class="btn btn-primary">Lưu thay đổi</button>
-                            <a href="<?= ADMIN_URL ?>musics.php" class="btn btn-secondary">Hủy</a>
+                    </div>
+                    <?php 
+                    endif;
+                }
+                ?>
+            </div>
+        </div>
+    </div>
+    <?php
+} else {
+    // Hiển thị danh sách tất cả bài hát
+    $categoryId = isset($_GET['category']) ? (int)$_GET['category'] : null;
+    $search = isset($_GET['search']) ? sanitize($_GET['search']) : null;
+    $artist = isset($_GET['artist']) ? sanitize($_GET['artist']) : null;
+    
+    // Xây dựng câu truy vấn
+    $query = "SELECT m.*, c.name as category_name 
+              FROM musics m 
+              LEFT JOIN categories c ON m.category_id = c.id";
+    $params = [];
+    
+    $whereConditions = [];
+    if ($categoryId) {
+        $whereConditions[] = "m.category_id = ?";
+        $params[] = $categoryId;
+    }
+    
+    if ($search) {
+        $whereConditions[] = "(m.title LIKE ? OR m.artist LIKE ? OR m.description LIKE ?)";
+        $params[] = "%$search%";
+        $params[] = "%$search%";
+        $params[] = "%$search%";
+    }
+    
+    if ($artist) {
+        $whereConditions[] = "m.artist = ?";
+        $params[] = $artist;
+    }
+    
+    if (!empty($whereConditions)) {
+        $query .= " WHERE " . implode(' AND ', $whereConditions);
+    }
+    
+    $query .= " ORDER BY m.created_at DESC";
+    
+    $musics = $db->select($query, $params);
+    $categories = $db->select("SELECT * FROM categories WHERE type = 'music' ORDER BY name");
+    
+    // Lấy danh sách nghệ sĩ duy nhất
+    $artists = $db->select("SELECT DISTINCT artist FROM musics ORDER BY artist ASC");
+    
+    include '../includes/header.php';
+    ?>
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-md-3">
+                <div class="card mb-4">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">Tìm kiếm</h5>
+                    </div>
+                    <div class="card-body">
+                        <form action="<?= USER_URL ?>musics.php" method="get">
+                            <div class="form-group">
+                                <input type="text" name="search" class="form-control" placeholder="Tìm kiếm bài hát..." 
+                                       value="<?= isset($_GET['search']) ? htmlspecialchars($_GET['search']) : '' ?>">
+                            </div>
+                            <button type="submit" class="btn btn-info btn-block">Tìm kiếm</button>
+                        </form>
+                    </div>
+                </div>
+                
+                <div class="card mb-4">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">Thể loại</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item <?= !isset($_GET['category']) ? 'active' : '' ?>">
+                                <a href="<?= USER_URL ?>musics.php" class="<?= !isset($_GET['category']) ? 'text-white' : 'text-dark' ?>">
+                                    Tất cả thể loại
+                                </a>
+                            </li>
+                            <?php foreach ($categories as $category): ?>
+                            <li class="list-group-item <?= isset($_GET['category']) && $_GET['category'] == $category['id'] ? 'active' : '' ?>">
+                                <a href="<?= USER_URL ?>musics.php?category=<?= $category['id'] ?>" 
+                                   class="<?= isset($_GET['category']) && $_GET['category'] == $category['id'] ? 'text-white' : 'text-dark' ?>">
+                                    <?= htmlspecialchars($category['name']) ?>
+                                </a>
+                            </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">Nghệ sĩ</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="artist-list" style="max-height: 300px; overflow-y: auto;">
+                            <ul class="list-group list-group-flush">
+                                <li class="list-group-item <?= !isset($_GET['artist']) ? 'active' : '' ?>">
+                                    <a href="<?= USER_URL ?>musics.php" class="<?= !isset($_GET['artist']) ? 'text-white' : 'text-dark' ?>">
+                                        Tất cả nghệ sĩ
+                                    </a>
+                                </li>
+                                <?php foreach ($artists as $artistItem): ?>
+                                <li class="list-group-item <?= isset($_GET['artist']) && $_GET['artist'] == $artistItem['artist'] ? 'active' : '' ?>">
+                                    <a href="<?= USER_URL ?>musics.php?artist=<?= urlencode($artistItem['artist']) ?>" 
+                                       class="<?= isset($_GET['artist']) && $_GET['artist'] == $artistItem['artist'] ? 'text-white' : 'text-dark' ?>">
+                                        <?= htmlspecialchars($artistItem['artist']) ?>
+                                    </a>
+                                </li>
+                                <?php endforeach; ?>
+                            </ul>
                         </div>
-                    </form>
+                    </div>
                 </div>
             </div>
-            <?php else: ?>
-            <!-- Danh sách bài hát -->
-            <div class="table-responsive">
-                <table class="table table-striped table-bordered">
-                    <thead class="thead-dark">
-                        <tr>
-                            <th>ID</th>
-                            <th>Ảnh bìa</th>
-                            <th>Tiêu đề</th>
-                            <th>Nghệ sĩ</th>
-                            <th>Danh mục</th>
-                            <th>Nghe thử</th>
-                            <th>Thao tác</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($musics)): ?>
-                        <tr>
-                            <td colspan="7" class="text-center">Không có bài hát nào.</td>
-                        </tr>
-                        <?php else: ?>
-                        <?php foreach ($musics as $music): ?>
-                        <tr>
-                            <td><?= $music['id'] ?></td>
-                            <td>
+            
+            <div class="col-md-9">
+                <h2 class="mb-4">Thư viện âm nhạc</h2>
+                
+                <?php if (isset($_GET['search']) || isset($_GET['category']) || isset($_GET['artist'])): ?>
+                <div class="mb-4">
+                    <h6>
+                        <?php if (isset($_GET['search'])): ?>
+                        Kết quả tìm kiếm cho: <span class="text-info">"<?= htmlspecialchars($_GET['search']) ?>"</span>
+                        <?php endif; ?>
+                        
+                        <?php if (isset($_GET['category'])): ?>
+                        <?php
+                        $categoryName = '';
+                        foreach ($categories as $cat) {
+                            if ($cat['id'] == $_GET['category']) {
+                                $categoryName = $cat['name'];
+                                break;
+                            }
+                        }
+                        ?>
+                        Thể loại: <span class="text-info"><?= htmlspecialchars($categoryName) ?></span>
+                        <?php endif; ?>
+                        
+                        <?php if (isset($_GET['artist'])): ?>
+                        Nghệ sĩ: <span class="text-info"><?= htmlspecialchars($_GET['artist']) ?></span>
+                        <?php endif; ?>
+                    </h6>
+                    
+                    <a href="<?= USER_URL ?>musics.php" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-times"></i> Xóa bộ lọc
+                    </a>
+                </div>
+                <?php endif; ?>
+                
+                <?php if (empty($musics)): ?>
+                <div class="alert alert-info">
+                    Không có bài hát nào được tìm thấy.
+                </div>
+                <?php else: ?>
+                <div class="row">
+                    <?php foreach ($musics as $music): ?>
+                    <div class="col-md-4 mb-4">
+                        <div class="card h-100 shadow-sm">
+                            <div class="card-img-top" style="height: 180px; overflow: hidden;">
                                 <?php if (!empty($music['cover_image'])): ?>
                                 <img src="<?= BASE_URL ?>assets/uploads/covers/<?= $music['cover_image'] ?>" 
-                                     alt="<?= htmlspecialchars($music['title']) ?>" 
-                                     style="max-width: 50px; max-height: 50px;">
+                                     alt="<?= htmlspecialchars($music['title']) ?>" class="img-fluid w-100 h-100" style="object-fit: cover;">
                                 <?php else: ?>
-                                <span class="badge badge-secondary">Không có ảnh</span>
+                                <div class="bg-info text-white h-100 d-flex align-items-center justify-content-center">
+                                    <i class="fas fa-music fa-3x"></i>
+                                </div>
                                 <?php endif; ?>
-                            </td>
-                            <td><?= htmlspecialchars($music['title']) ?></td>
-                            <td><?= htmlspecialchars($music['artist']) ?></td>
-                            <td><?= htmlspecialchars($music['category_name'] ?? 'Không có danh mục') ?></td>
-                            <td>
+                            </div>
+                            <div class="card-body">
+                                <h5 class="card-title"><?= htmlspecialchars($music['title']) ?></h5>
+                                <p class="card-text">
+                                    <a href="<?= USER_URL ?>musics.php?artist=<?= urlencode($music['artist']) ?>" class="text-muted">
+                                        <?= htmlspecialchars($music['artist']) ?>
+                                    </a>
+                                </p>
+                                
+                                <?php if (!empty($music['category_name'])): ?>
+                                <p class="card-text">
+                                    <span class="badge badge-info"><?= htmlspecialchars($music['category_name']) ?></span>
+                                </p>
+                                <?php endif; ?>
+                                
                                 <?php if (!empty($music['audio_file'])): ?>
-                                <audio controls style="max-width: 200px;">
+                                <audio controls class="w-100 mt-2">
                                     <source src="<?= BASE_URL ?>assets/uploads/musics/<?= $music['audio_file'] ?>" type="audio/mpeg">
                                     Trình duyệt của bạn không hỗ trợ phát audio.
                                 </audio>
-                                <?php else: ?>
-                                <span class="badge badge-secondary">Không có file audio</span>
                                 <?php endif; ?>
-                            </td>
-                            <td>
-                                <a href="<?= ADMIN_URL ?>musics.php?edit=<?= $music['id'] ?>" class="btn btn-sm btn-info">
-                                    <i class="fas fa-edit"></i> Sửa
+                            </div>
+                            <div class="card-footer bg-white">
+                                <a href="<?= USER_URL ?>musics.php?id=<?= $music['id'] ?>" class="btn btn-info btn-sm btn-block">
+                                    <i class="fas fa-headphones"></i> Chi tiết
                                 </a>
-                                <a href="<?= ADMIN_URL ?>musics.php?action=delete&id=<?= $music['id'] ?>" 
-                                   class="btn btn-sm btn-danger"
-                                   onclick="return confirm('Bạn có chắc chắn muốn xóa bài hát này?')">
-                                    <i class="fas fa-trash"></i> Xóa
-                                </a>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-            <?php endif; ?>
-        </div>
-    </div>
-</div>
-
-<!-- Modal thêm bài hát mới -->
-<div class="modal fade" id="addMusicModal" tabindex="-1" role="dialog" aria-labelledby="addMusicModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="addMusicModalLabel">Thêm bài hát mới</h5>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-            </div>
-            <div class="modal-body">
-                <form method="post" enctype="multipart/form-data">
-                    <input type="hidden" name="action" value="add">
-                    
-                    <div class="form-group">
-                        <label>Tiêu đề bài hát</label>
-                        <input type="text" class="form-control" name="title" required>
+                            </div>
+                        </div>
                     </div>
-                    
-                    <div class="form-group">
-                        <label>Nghệ sĩ</label>
-                        <input type="text" class="form-control" name="artist" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Danh mục</label>
-                        <select class="form-control" name="category_id">
-                            <option value="">-- Không có danh mục --</option>
-                            <?php 
-                            if (empty($categories)): 
-                            ?>
-                            <option value="" disabled>Chưa có danh mục. Vui lòng thêm danh mục trước.</option>
-                            <?php else: ?>
-                                <?php foreach ($categories as $category): ?>
-                                <option value="<?= $category['id'] ?>"><?= htmlspecialchars($category['name']) ?></option>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-                        </select>
-                        <?php if (empty($categories)): ?>
-                        <small class="form-text text-danger">
-                            Chưa có danh mục nào. <a href="<?= ADMIN_URL ?>categories.php">Thêm danh mục</a> trước khi thêm nội dung.
-                        </small>
-                        <?php endif; ?>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Mô tả</label>
-                        <textarea class="form-control" name="description" rows="4"></textarea>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Ảnh bìa</label>
-                        <input type="file" class="form-control-file" name="cover_image" accept="image/*">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>File audio</label>
-                        <input type="file" class="form-control-file" name="audio_file" accept="audio/*" required>
-                    </div>
-                    
-                    <button type="submit" class="btn btn-primary">Thêm mới</button>
-                </form>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>
-</div>
+    <?php
+}
 
-<?php include '../includes/admin_footer.php'; ?>
+include '../includes/footer.php';
+?>
