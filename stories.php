@@ -4,402 +4,340 @@ require_once '../database/database.php';
 
 $db = new Database();
 
-// Xử lý thêm truyện mới
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add') {
-    $title = sanitize($_POST['title']);
-    $author = sanitize($_POST['author']);
-    $description = sanitize($_POST['description']);
-    $content = $_POST['content']; // Nội dung truyện có thể có HTML
-    $category_id = !empty($_POST['category_id']) ? (int)$_POST['category_id'] : null;
+// Xem chi tiết một truyện
+if (isset($_GET['id']) && is_numeric($_GET['id'])) {
+    $storyId = (int)$_GET['id'];
+    $story = $db->selectOne("SELECT s.*, c.name as category_name 
+                            FROM stories s 
+                            LEFT JOIN categories c ON s.category_id = c.id 
+                            WHERE s.id = ?", [$storyId]);
     
-    // Upload cover image
-    $cover_image = '';
-    if (isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === 0) {
-        $fileName = time() . '_' . basename($_FILES['cover_image']['name']);
-        $targetPath = COVER_UPLOAD_PATH . $fileName;
-        
-        if (move_uploaded_file($_FILES['cover_image']['tmp_name'], $targetPath)) {
-            $cover_image = $fileName;
-        }
+    include '../includes/header.php';
+    
+    if (!$story) {
+        echo '<div class="container mt-5"><div class="alert alert-danger">Truyện không tồn tại!</div></div>';
+        include '../includes/footer.php';
+        exit;
     }
     
-    // Upload audio file
-    $audio_file = '';
-    if (isset($_FILES['audio_file']) && $_FILES['audio_file']['error'] === 0) {
-        $fileName = time() . '_' . basename($_FILES['audio_file']['name']);
-        $targetPath = STORY_UPLOAD_PATH . $fileName;
+    // Hiển thị chi tiết truyện
+    ?>
+    <div class="container mt-5">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="<?= BASE_URL ?>">Trang chủ</a></li>
+                <li class="breadcrumb-item"><a href="<?= USER_URL ?>stories.php">Truyện</a></li>
+                <li class="breadcrumb-item active"><?= htmlspecialchars($story['title']) ?></li>
+            </ol>
+        </nav>
         
-        if (move_uploaded_file($_FILES['audio_file']['tmp_name'], $targetPath)) {
-            $audio_file = $fileName;
-        }
-    }
-    
-    // Thêm vào database
-    $data = [
-        'title' => $title,
-        'author' => $author,
-        'description' => $description,
-        'content' => $content,
-        'category_id' => $category_id,
-        'cover_image' => $cover_image,
-        'audio_file' => $audio_file
-    ];
-    
-    $db->insert('stories', $data);
-    redirect(ADMIN_URL . 'stories.php?success=1');
-}
-
-// Xử lý cập nhật truyện
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update') {
-    $id = (int)$_POST['id'];
-    $title = sanitize($_POST['title']);
-    $author = sanitize($_POST['author']);
-    $description = sanitize($_POST['description']);
-    $content = $_POST['content']; // Nội dung truyện có thể có HTML
-    $category_id = !empty($_POST['category_id']) ? (int)$_POST['category_id'] : null;
-    
-    // Lấy thông tin hiện tại
-    $currentStory = $db->selectOne("SELECT * FROM stories WHERE id = ?", [$id]);
-    
-    // Upload cover image nếu có
-    $cover_image = $currentStory['cover_image'];
-    if (isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === 0) {
-        $fileName = time() . '_' . basename($_FILES['cover_image']['name']);
-        $targetPath = COVER_UPLOAD_PATH . $fileName;
-        
-        if (move_uploaded_file($_FILES['cover_image']['tmp_name'], $targetPath)) {
-            // Xóa file cũ nếu có
-            if (!empty($currentStory['cover_image'])) {
-                $oldFile = COVER_UPLOAD_PATH . $currentStory['cover_image'];
-                if (file_exists($oldFile)) {
-                    unlink($oldFile);
-                }
-            }
-            $cover_image = $fileName;
-        }
-    }
-    
-    // Upload audio file nếu có
-    $audio_file = $currentStory['audio_file'];
-    if (isset($_FILES['audio_file']) && $_FILES['audio_file']['error'] === 0) {
-        $fileName = time() . '_' . basename($_FILES['audio_file']['name']);
-        $targetPath = STORY_UPLOAD_PATH . $fileName;
-        
-        if (move_uploaded_file($_FILES['audio_file']['tmp_name'], $targetPath)) {
-            // Xóa file cũ nếu có
-            if (!empty($currentStory['audio_file'])) {
-                $oldFile = STORY_UPLOAD_PATH . $currentStory['audio_file'];
-                if (file_exists($oldFile)) {
-                    unlink($oldFile);
-                }
-            }
-            $audio_file = $fileName;
-        }
-    }
-    
-    // Cập nhật vào database
-    $data = [
-        'title' => $title,
-        'author' => $author,
-        'description' => $description,
-        'content' => $content,
-        'category_id' => $category_id,
-        'cover_image' => $cover_image,
-        'audio_file' => $audio_file
-    ];
-    
-    $db->update('stories', $data, 'id = ?', [$id]);
-    redirect(ADMIN_URL . 'stories.php?updated=1');
-}
-
-// Xử lý xóa truyện
-if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
-    $id = (int)$_GET['id'];
-    
-    // Lấy thông tin trước khi xóa
-    $story = $db->selectOne("SELECT * FROM stories WHERE id = ?", [$id]);
-    
-    if ($story) {
-        // Xóa các file liên quan
-        if (!empty($story['cover_image'])) {
-            $file = COVER_UPLOAD_PATH . $story['cover_image'];
-            if (file_exists($file)) {
-                unlink($file);
-            }
-        }
-        
-        if (!empty($story['audio_file'])) {
-            $file = STORY_UPLOAD_PATH . $story['audio_file'];
-            if (file_exists($file)) {
-                unlink($file);
-            }
-        }
-        
-        // Xóa từ database
-        $db->delete('stories', 'id = ?', [$id]);
-    }
-    
-    redirect(ADMIN_URL . 'stories.php?deleted=1');
-}
-
-// Lấy danh sách danh mục
-$categories = $db->select("SELECT * FROM categories WHERE type = 'story' ORDER BY name ASC");
-
-// Lấy danh sách truyện hoặc chi tiết một truyện
-$editStory = null;
-if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
-    $editStory = $db->selectOne("SELECT * FROM stories WHERE id = ?", [(int)$_GET['edit']]);
-}
-
-$stories = $db->select("SELECT s.*, c.name as category_name 
-                      FROM stories s
-                      LEFT JOIN categories c ON s.category_id = c.id 
-                      ORDER BY s.created_at DESC");
-
-include '../includes/admin_header.php';
-?>
-
-<div class="container mt-4">
-    <div class="row">
-        <div class="col-md-12">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h2><?= $editStory ? 'Chỉnh sửa truyện' : 'Quản lý truyện' ?></h2>
-                <?php if (!$editStory): ?>
-                <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#addStoryModal">
-                    <i class="fas fa-plus"></i> Thêm truyện mới
-                </button>
+        <div class="row">
+            <div class="col-md-3">
+                <?php if (!empty($story['cover_image'])): ?>
+                <img src="<?= BASE_URL ?>assets/uploads/covers/<?= $story['cover_image'] ?>" 
+                     alt="<?= htmlspecialchars($story['title']) ?>" class="img-fluid rounded shadow mb-4">
+                <?php else: ?>
+                <div class="bg-success text-white p-5 text-center rounded mb-4">
+                    <i class="fas fa-book-open fa-5x mb-3"></i>
+                    <h5>Không có ảnh bìa</h5>
+                </div>
+                <?php endif; ?>
+                
+                <div class="card mb-4">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">Thông tin truyện</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-unstyled">
+                            <li class="mb-2"><strong>Tác giả:</strong> <?= htmlspecialchars($story['author']) ?></li>
+                            <?php if (!empty($story['category_name'])): ?>
+                            <li class="mb-2"><strong>Thể loại:</strong> <?= htmlspecialchars($story['category_name']) ?></li>
+                            <?php endif; ?>
+                            <li class="mb-2"><strong>Ngày đăng:</strong> <?= date('d/m/Y', strtotime($story['created_at'])) ?></li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <?php if (!empty($story['audio_file'])): ?>
+                <div class="card mb-4">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">Nghe truyện Audio</h5>
+                    </div>
+                    <div class="card-body">
+                        <audio controls class="w-100 mb-3">
+                            <source src="<?= BASE_URL ?>assets/uploads/stories/<?= $story['audio_file'] ?>" type="audio/mpeg">
+                            Trình duyệt của bạn không hỗ trợ phát audio.
+                        </audio>
+                        <button class="btn btn-success btn-sm btn-block mt-2" id="toggleAudioReading">
+                            <i class="fas fa-headphones"></i> Nghe truyện
+                        </button>
+                    </div>
+                </div>
                 <?php endif; ?>
             </div>
             
-            <?php if (isset($_GET['success'])): ?>
-            <div class="alert alert-success alert-dismissible fade show" role="alert">
-                Thêm truyện mới thành công!
-                <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
-            </div>
-            <?php endif; ?>
-            
-            <?php if (isset($_GET['updated'])): ?>
-            <div class="alert alert-success alert-dismissible fade show" role="alert">
-                Cập nhật truyện thành công!
-                <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
-            </div>
-            <?php endif; ?>
-            
-            <?php if (isset($_GET['deleted'])): ?>
-            <div class="alert alert-success alert-dismissible fade show" role="alert">
-                Xóa truyện thành công!
-                <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
-            </div>
-            <?php endif; ?>
-            
-            <?php if ($editStory): ?>
-            <!-- Form chỉnh sửa truyện -->
-            <div class="card mb-4">
-                <div class="card-body">
-                    <form method="post" enctype="multipart/form-data">
-                        <input type="hidden" name="action" value="update">
-                        <input type="hidden" name="id" value="<?= $editStory['id'] ?>">
+            <div class="col-md-9">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h1 class="mb-3"><?= htmlspecialchars($story['title']) ?></h1>
                         
-                        <div class="form-group">
-                            <label>Tiêu đề truyện</label>
-                            <input type="text" class="form-control" name="title" value="<?= htmlspecialchars($editStory['title']) ?>" required>
+                        <?php if (!empty($story['description'])): ?>
+                        <div class="story-description alert alert-light mb-4">
+                            <h5 class="mb-3">Giới thiệu</h5>
+                            <p class="text-muted"><?= nl2br(htmlspecialchars($story['description'])) ?></p>
                         </div>
+                        <?php endif; ?>
                         
-                        <div class="form-group">
-                            <label>Tác giả</label>
-                            <input type="text" class="form-control" name="author" value="<?= htmlspecialchars($editStory['author']) ?>" required>
+                        <div class="story-content mt-4">
+                            <h5 class="mb-3">Nội dung truyện</h5>
+                            <div class="story-text p-3 bg-light rounded">
+                                <?php 
+                                if (!empty($story['content'])) {
+                                    // Format nội dung truyện, giữ định dạng HTML nếu có
+                                    echo nl2br($story['content']);
+                                } else {
+                                    echo '<div class="alert alert-warning">Truyện này chưa có nội dung.</div>';
+                                }
+                                ?>
+                            </div>
                         </div>
-                        
-                        <div class="form-group">
-                            <label>Danh mục</label>
-                            <select class="form-control" name="category_id">
-                                <option value="">-- Chọn danh mục --</option>
-                                <?php foreach ($categories as $category): ?>
-                                <option value="<?= $category['id'] ?>" <?= $editStory['category_id'] == $category['id'] ? 'selected' : '' ?>>
+                    </div>
+                </div>
+                
+                <!-- Truyện liên quan -->
+                <?php
+                if (!empty($story['category_id'])) {
+                    $relatedStories = $db->select(
+                        "SELECT * FROM stories 
+                         WHERE category_id = ? AND id != ? 
+                         ORDER BY created_at DESC LIMIT 3",
+                        [$story['category_id'], $story['id']]
+                    );
+                    
+                    if (!empty($relatedStories)):
+                ?>
+                <div class="mt-5">
+                    <h4 class="mb-4">Truyện cùng thể loại</h4>
+                    <div class="row">
+                        <?php foreach ($relatedStories as $relatedStory): ?>
+                        <div class="col-md-4 mb-4">
+                            <div class="card h-100 shadow-sm">
+                                <div class="card-img-top" style="height: 150px; overflow: hidden;">
+                                    <?php if (!empty($relatedStory['cover_image'])): ?>
+                                    <img src="<?= BASE_URL ?>assets/uploads/covers/<?= $relatedStory['cover_image'] ?>" 
+                                         alt="<?= htmlspecialchars($relatedStory['title']) ?>" class="img-fluid w-100 h-100" style="object-fit: cover;">
+                                    <?php else: ?>
+                                    <div class="bg-success text-white h-100 d-flex align-items-center justify-content-center">
+                                        <i class="fas fa-book-open fa-3x"></i>
+                                    </div>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="card-body">
+                                    <h5 class="card-title"><?= htmlspecialchars($relatedStory['title']) ?></h5>
+                                    <p class="card-text small text-muted">Tác giả: <?= htmlspecialchars($relatedStory['author']) ?></p>
+                                </div>
+                                <div class="card-footer bg-white">
+                                    <a href="<?= USER_URL ?>stories.php?id=<?= $relatedStory['id'] ?>" class="btn btn-success btn-sm btn-block">
+                                        <i class="fas fa-book-reader"></i> Đọc truyện
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <?php 
+                    endif;
+                }
+                ?>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const toggleAudioReading = document.getElementById('toggleAudioReading');
+            if (toggleAudioReading) {
+                const audioPlayer = document.querySelector('audio');
+                
+                toggleAudioReading.addEventListener('click', function() {
+                    if (audioPlayer.paused) {
+                        audioPlayer.play();
+                        this.innerHTML = '<i class="fas fa-pause"></i> Tạm dừng';
+                    } else {
+                        audioPlayer.pause();
+                        this.innerHTML = '<i class="fas fa-headphones"></i> Tiếp tục nghe';
+                    }
+                });
+            }
+        });
+    </script>
+    <?php
+} else {
+    // Hiển thị danh sách tất cả truyện
+    $categoryId = isset($_GET['category']) ? (int)$_GET['category'] : null;
+    $search = isset($_GET['search']) ? sanitize($_GET['search']) : null;
+    
+    // Xây dựng câu truy vấn
+    $query = "SELECT s.*, c.name as category_name 
+              FROM stories s 
+              LEFT JOIN categories c ON s.category_id = c.id";
+    $params = [];
+    
+    $whereConditions = [];
+    if ($categoryId) {
+        $whereConditions[] = "s.category_id = ?";
+        $params[] = $categoryId;
+    }
+    
+    if ($search) {
+        $whereConditions[] = "(s.title LIKE ? OR s.author LIKE ? OR s.description LIKE ?)";
+        $params[] = "%$search%";
+        $params[] = "%$search%";
+        $params[] = "%$search%";
+    }
+    
+    if (!empty($whereConditions)) {
+        $query .= " WHERE " . implode(' AND ', $whereConditions);
+    }
+    
+    $query .= " ORDER BY s.created_at DESC";
+    
+    $stories = $db->select($query, $params);
+    $categories = $db->select("SELECT * FROM categories WHERE type = 'story' ORDER BY name");
+    
+    include '../includes/header.php';
+    ?>
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-md-3">
+                <div class="card mb-4">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">Tìm kiếm</h5>
+                    </div>
+                    <div class="card-body">
+                        <form action="<?= USER_URL ?>stories.php" method="get">
+                            <div class="form-group">
+                                <input type="text" name="search" class="form-control" placeholder="Tìm kiếm truyện..." 
+                                       value="<?= isset($_GET['search']) ? htmlspecialchars($_GET['search']) : '' ?>">
+                            </div>
+                            <button type="submit" class="btn btn-success btn-block">Tìm kiếm</button>
+                        </form>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">Thể loại</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item <?= !isset($_GET['category']) ? 'active' : '' ?>">
+                                <a href="<?= USER_URL ?>stories.php" class="<?= !isset($_GET['category']) ? 'text-white' : 'text-dark' ?>">
+                                    Tất cả thể loại
+                                </a>
+                            </li>
+                            <?php foreach ($categories as $category): ?>
+                            <li class="list-group-item <?= isset($_GET['category']) && $_GET['category'] == $category['id'] ? 'active' : '' ?>">
+                                <a href="<?= USER_URL ?>stories.php?category=<?= $category['id'] ?>" 
+                                   class="<?= isset($_GET['category']) && $_GET['category'] == $category['id'] ? 'text-white' : 'text-dark' ?>">
                                     <?= htmlspecialchars($category['name']) ?>
-                                </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label>Mô tả</label>
-                            <textarea class="form-control" name="description" rows="4"><?= htmlspecialchars($editStory['description']) ?></textarea>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label>Nội dung truyện</label>
-                            <textarea class="form-control" name="content" id="storyContent" rows="15"><?= htmlspecialchars($editStory['content']) ?></textarea>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label>Ảnh bìa</label>
-                            <?php if (!empty($editStory['cover_image'])): ?>
-                            <div class="mb-2">
-                                <img src="<?= BASE_URL ?>assets/uploads/covers/<?= $editStory['cover_image'] ?>" style="max-width: 200px; max-height: 200px;">
-                            </div>
-                            <?php endif; ?>
-                            <input type="file" class="form-control-file" name="cover_image" accept="image/*">
-                            <small class="form-text text-muted">Để trống nếu không muốn thay đổi ảnh bìa.</small>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label>File audio (nếu có)</label>
-                            <?php if (!empty($editStory['audio_file'])): ?>
-                            <div class="mb-2">
-                                <audio controls>
-                                    <source src="<?= BASE_URL ?>assets/uploads/stories/<?= $editStory['audio_file'] ?>" type="audio/mpeg">
-                                    Trình duyệt của bạn không hỗ trợ phát audio.
-                                </audio>
-                            </div>
-                            <?php endif; ?>
-                            <input type="file" class="form-control-file" name="audio_file" accept="audio/*">
-                            <small class="form-text text-muted">Để trống nếu không muốn thay đổi file audio.</small>
-                        </div>
-                        
-                        <div class="form-group">
-                            <button type="submit" class="btn btn-primary">Lưu thay đổi</button>
-                            <a href="<?= ADMIN_URL ?>stories.php" class="btn btn-secondary">Hủy</a>
-                        </div>
-                    </form>
+                                </a>
+                            </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
                 </div>
             </div>
-            <?php else: ?>
-            <!-- Danh sách truyện -->
-            <div class="table-responsive">
-                <table class="table table-striped table-bordered">
-                    <thead class="thead-dark">
-                        <tr>
-                            <th>ID</th>
-                            <th>Ảnh bìa</th>
-                            <th>Tiêu đề</th>
-                            <th>Tác giả</th>
-                            <th>Danh mục</th>
-                            <th>Ngày thêm</th>
-                            <th>Thao tác</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($stories)): ?>
-                        <tr>
-                            <td colspan="7" class="text-center">Không có truyện nào.</td>
-                        </tr>
-                        <?php else: ?>
-                        <?php foreach ($stories as $story): ?>
-                        <tr>
-                            <td><?= $story['id'] ?></td>
-                            <td>
-                                <?php if (!empty($story['cover_image'])): ?>
-                                <img src="<?= BASE_URL ?>assets/uploads/covers/<?= $story['cover_image'] ?>" 
-                                     alt="<?= htmlspecialchars($story['title']) ?>" 
-                                     style="max-width: 50px; max-height: 70px;">
-                                <?php else: ?>
-                                <span class="badge badge-secondary">Không có ảnh</span>
-                                <?php endif; ?>
-                            </td>
-                            <td><?= htmlspecialchars($story['title']) ?></td>
-                            <td><?= htmlspecialchars($story['author']) ?></td>
-                            <td><?= htmlspecialchars($story['category_name'] ?? 'Không có danh mục') ?></td>
-                            <td><?= date('d/m/Y', strtotime($story['created_at'])) ?></td>
-                            <td>
-                                <a href="<?= ADMIN_URL ?>stories.php?edit=<?= $story['id'] ?>" class="btn btn-sm btn-info">
-                                    <i class="fas fa-edit"></i> Sửa
-                                </a>
-                                <a href="<?= ADMIN_URL ?>stories.php?action=delete&id=<?= $story['id'] ?>" 
-                                   class="btn btn-sm btn-danger"
-                                   onclick="return confirm('Bạn có chắc chắn muốn xóa truyện này?')">
-                                    <i class="fas fa-trash"></i> Xóa
-                                </a>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-            <?php endif; ?>
-        </div>
-    </div>
-</div>
-
-<!-- Modal thêm truyện mới -->
-<div class="modal fade" id="addStoryModal" tabindex="-1" role="dialog" aria-labelledby="addStoryModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="addStoryModalLabel">Thêm truyện mới</h5>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-            </div>
-            <div class="modal-body">
-                <form method="post" enctype="multipart/form-data">
-                    <input type="hidden" name="action" value="add">
-                    
-                    <div class="form-group">
-                        <label>Tiêu đề truyện</label>
-                        <input type="text" class="form-control" name="title" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Tác giả</label>
-                        <input type="text" class="form-control" name="author" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Danh mục</label>
-                        <select class="form-control" name="category_id">
-                            <option value="">-- Chọn danh mục --</option>
-                            <?php foreach ($categories as $category): ?>
-                            <option value="<?= $category['id'] ?>"><?= htmlspecialchars($category['name']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Mô tả</label>
-                        <textarea class="form-control" name="description" rows="4"></textarea>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Nội dung truyện</label>
-                        <textarea class="form-control" name="content" id="newStoryContent" rows="15"></textarea>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Ảnh bìa</label>
-                        <input type="file" class="form-control-file" name="cover_image" accept="image/*">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>File audio (nếu có)</label>
-                        <input type="file" class="form-control-file" name="audio_file" accept="audio/*">
-                    </div>
-                    
-                    <button type="submit" class="btn btn-primary">Thêm mới</button>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-
-<script>
-// Khởi tạo trình soạn thảo nội dung nếu có thư viện
-document.addEventListener('DOMContentLoaded', function() {
-    if (typeof ClassicEditor !== 'undefined') {
-        ClassicEditor
-            .create(document.querySelector('#storyContent'))
-            .catch(error => {
-                console.error(error);
-            });
             
-        ClassicEditor
-            .create(document.querySelector('#newStoryContent'))
-            .catch(error => {
-                console.error(error);
-            });
-    }
-});
-</script>
+            <div class="col-md-9">
+                <h2 class="mb-4">Thư viện truyện</h2>
+                
+                <?php if (isset($_GET['search']) || isset($_GET['category'])): ?>
+                <div class="mb-4">
+                    <h6>
+                        <?php if (isset($_GET['search'])): ?>
+                        Kết quả tìm kiếm cho: <span class="text-success">"<?= htmlspecialchars($_GET['search']) ?>"</span>
+                        <?php endif; ?>
+                        
+                        <?php if (isset($_GET['category'])): ?>
+                        <?php
+                        $categoryName = '';
+                        foreach ($categories as $cat) {
+                            if ($cat['id'] == $_GET['category']) {
+                                $categoryName = $cat['name'];
+                                break;
+                            }
+                        }
+                        ?>
+                        Thể loại: <span class="text-success"><?= htmlspecialchars($categoryName) ?></span>
+                        <?php endif; ?>
+                    </h6>
+                    
+                    <a href="<?= USER_URL ?>stories.php" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-times"></i> Xóa bộ lọc
+                    </a>
+                </div>
+                <?php endif; ?>
+                
+                <div class="row">
+                    <?php if (empty($stories)): ?>
+                    <div class="col-12">
+                        <div class="alert alert-info">
+                            Không có truyện nào được tìm thấy.
+                        </div>
+                    </div>
+                    <?php else: ?>
+                    <?php foreach ($stories as $story): ?>
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100 shadow-sm">
+                            <div class="row no-gutters">
+                                <div class="col-md-4">
+                                    <?php if (!empty($story['cover_image'])): ?>
+                                    <img src="<?= BASE_URL ?>assets/uploads/covers/<?= $story['cover_image'] ?>" 
+                                         alt="<?= htmlspecialchars($story['title']) ?>" 
+                                         class="img-fluid" style="height: 100%; object-fit: cover;">
+                                    <?php else: ?>
+                                    <div class="bg-success text-white h-100 d-flex align-items-center justify-content-center">
+                                        <i class="fas fa-book-open fa-3x"></i>
+                                    </div>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="col-md-8">
+                                    <div class="card-body">
+                                        <h5 class="card-title"><?= htmlspecialchars($story['title']) ?></h5>
+                                        <p class="card-text small"><strong>Tác giả:</strong> <?= htmlspecialchars($story['author']) ?></p>
+                                        
+                                        <?php if (!empty($story['category_name'])): ?>
+                                        <p class="card-text small">
+                                            <span class="badge badge-success"><?= htmlspecialchars($story['category_name']) ?></span>
+                                            
+                                            <?php if (!empty($story['audio_file'])): ?>
+                                            <span class="badge badge-warning">Có Audio</span>
+                                            <?php endif; ?>
+                                        </p>
+                                        <?php endif; ?>
+                                        
+                                        <p class="card-text small text-muted">
+                                            <?= substr(strip_tags(htmlspecialchars($story['description'] ?? '')), 0, 100) ?>...
+                                        </p>
+                                        
+                                        <a href="<?= USER_URL ?>stories.php?id=<?= $story['id'] ?>" class="btn btn-sm btn-success">
+                                            <i class="fas fa-book-reader"></i> Đọc truyện
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php
+}
 
-<?php include '../includes/admin_footer.php'; ?>
+include '../includes/footer.php';
+?>
